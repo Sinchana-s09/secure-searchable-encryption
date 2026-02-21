@@ -1,0 +1,63 @@
+Project Title
+# Secure String Matching using Searchable Encryption
+
+Short Description
+This project implements privacy-preserving substring search over encrypted data.
+Data is encrypted using AES-256 GCM, and searchable indexing is implemented
+using HMAC-based trigram tokens.
+The system allows secure substring matching without storing plaintext keywords.
+
+Features:
+## Features
+
+- AES-256 GCM encryption
+- HMAC-SHA256 token-based indexing
+- Substring search using trigram N-grams
+- SQLite database integration
+- REST API using Flask
+
+- Project Structure
+- ## Project Structure
+
+app.py             -> Main Flask API
+crypto_utils.py    -> Encryption and token generation
+db.py              -> Database initialization
+requirements.txt   -> Dependencies
+
+How To Run:
+## How to Run
+
+1. Clone the repository
+2. Install dependencies:
+   pip install -r requirements.txt
+3. Run the server:
+   python app.py
+4. Use Postman to test APIs
+
+Example API Usage:
+## API Endpoints
+
+POST /add
+{
+  "text": "ATM failed in Bangalore"
+}
+
+POST /search
+{
+  "query": "ban"
+}
+
+Innovation Section:
+## Innovation
+
+Unlike traditional systems that support only exact keyword search,
+this system supports secure substring search using trigram indexing,
+while keeping all data encrypted at rest.
+
+Tech Stack:
+## Tech Stack
+
+- Python
+- Flask
+- SQLite
+- PyCryptodome
