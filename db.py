@@ -13,6 +13,7 @@ def create_tables():
     conn.execute("""
     CREATE TABLE IF NOT EXISTS records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
         encrypted_text TEXT NOT NULL,
         nonce TEXT NOT NULL,
         tag TEXT NOT NULL
