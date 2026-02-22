@@ -46,9 +46,11 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
         ciphertext TEXT,
         nonce TEXT,
-        tag TEXT
+        tag TEXT,
+        FOREIGN KEY(username) REFERENCES users(username)
     )
     """)
 
@@ -69,7 +71,6 @@ init_db()
 
 # ----------------- AUTH LAYER -----------------
 
-
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -80,11 +81,14 @@ def token_required(f):
 
         try:
             token = auth_header.split(" ")[1]  # Remove 'Bearer'
-            jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            # Decode the token and extract the user
+            data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            current_user = data["user"]
         except Exception as e:
             return jsonify({"message": "Invalid or expired token"}), 403
 
-        return f(*args, **kwargs)
+        # Pass current_user to the wrapped function
+        return f(current_user, *args, **kwargs)
 
     return decorated
 
@@ -134,7 +138,7 @@ def login():
 
 @app.route("/addRecord", methods=["POST"])
 @token_required
-def add_record():
+def add_record(current_user): # <-- Add current_user here
     data = request.json
     text = data["text"]
 
@@ -143,8 +147,9 @@ def add_record():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT INTO records (ciphertext, nonce, tag) VALUES (?, ?, ?)",
-                   (encrypted["ciphertext"], encrypted["nonce"], encrypted["tag"]))
+    # Insert the current_user into the records table
+    cursor.execute("INSERT INTO records (username, ciphertext, nonce, tag) VALUES (?, ?, ?, ?)",
+                   (current_user, encrypted["ciphertext"], encrypted["nonce"], encrypted["tag"]))
 
     record_id = cursor.lastrowid
 
@@ -163,7 +168,7 @@ def add_record():
 
 @app.route("/search", methods=["POST"])
 @token_required
-def search():
+def search(current_user): # <-- Add current_user here
     data = request.json
     text = data["query"]
 
@@ -183,15 +188,18 @@ def search():
     results = []
 
     for record_id in matched_ids:
-        cursor.execute("SELECT * FROM records WHERE id=?", (record_id,))
+        # Filter by current_user to only get the logged-in user's records
+        cursor.execute("SELECT * FROM records WHERE id=? AND username=?", (record_id, current_user))
         record = cursor.fetchone()
 
-        decrypted = decrypt_text(record["ciphertext"], record["nonce"], record["tag"])
+        # If a record is found, it means it belongs to the current user
+        if record:
+            decrypted = decrypt_text(record["ciphertext"], record["nonce"], record["tag"])
 
-        results.append({
-            "record_id": record_id,
-            "decrypted_text": decrypted
-        })
+            results.append({
+                "record_id": record_id,
+                "decrypted_text": decrypted
+            })
 
     conn.close()
 
