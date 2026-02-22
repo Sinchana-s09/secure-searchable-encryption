@@ -3,3 +3,4 @@ flask-cors
 pycryptodome
 bcrypt
 PyJWT
+gunicorn
