@@ -1,6 +1,6 @@
 # Loggin credintials
 
-  ##user loggin
+  user loggin
 
   username:sinchana
   password:sinch
