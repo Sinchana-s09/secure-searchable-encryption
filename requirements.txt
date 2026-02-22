@@ -1,3 +1,5 @@
 flask
-pycryptodome
 flask-cors
+pycryptodome
+bcrypt
+PyJWT
