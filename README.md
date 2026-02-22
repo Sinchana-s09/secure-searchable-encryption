@@ -2,7 +2,8 @@
 
   user loggin
 
-  username:sinchana /
+  username:sinchana 
+  /
   password:sinch
 
   OR 
