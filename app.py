@@ -132,7 +132,7 @@ def login():
 # ----------------- ENCRYPTION LAYER -----------------
 
 
-@app.route("/AddRecord", methods=["POST"])
+@app.route("/addRecord", methods=["POST"])
 @token_required
 def add_record():
     data = request.json
@@ -165,7 +165,7 @@ def add_record():
 @token_required
 def search():
     data = request.json
-    text = data["text"]
+    text = data["query"]
 
     ngrams = generate_ngrams(text)
     conn = get_db()
