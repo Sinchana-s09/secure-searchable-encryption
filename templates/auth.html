@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-body">
+
+<div class="auth-container">
+    <h2>🔐 Secure System</h2>
+
+    <div class="tabs">
+        <button onclick="showLogin()">Login</button>
+        <button onclick="showRegister()">Register</button>
+    </div>
+
+    <div id="loginForm">
+        <input type="text" id="loginUsername" placeholder="Username">
+        <input type="password" id="loginPassword" placeholder="Password">
+        <button onclick="login()">Login</button>
+    </div>
+
+    <div id="registerForm" style="display:none;">
+        <input type="text" id="regUsername" placeholder="Username">
+        <input type="password" id="regPassword" placeholder="Password">
+        <button onclick="register()">Register</button>
+    </div>
+
+    <p id="message"></p>
+</div>
+
+<script>
+function showLogin() {
+    document.getElementById("loginForm").style.display = "block";
+    document.getElementById("registerForm").style.display = "none";
+}
+
+function showRegister() {
+    document.getElementById("loginForm").style.display = "none";
+    document.getElementById("registerForm").style.display = "block";
+}
+
+async function register() {
+    const username = document.getElementById("regUsername").value;
+    const password = document.getElementById("regPassword").value;
+
+    const response = await fetch("/register", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username, password})
+    });
+
+    const data = await response.json();
+    document.getElementById("message").innerText = data.message;
+}
+
+async function login() {
+    const username = document.getElementById("loginUsername").value;
+    const password = document.getElementById("loginPassword").value;
+
+    const response = await fetch("/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username, password})
+    });
+
+    const data = await response.json();
+
+    if (data.token) {
+        localStorage.setItem("token", data.token);
+        window.location.href = "/dashboard";
+    } else {
+        document.getElementById("message").innerText = "Login failed";
+    }
+}
+</script>
+
+</body>
+</html>

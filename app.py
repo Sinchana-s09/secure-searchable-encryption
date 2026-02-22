@@ -1,158 +1,201 @@
 from flask import Flask, request, jsonify
-from db import get_connection, create_tables
-from crypto_utils import encrypt_text, decrypt_text, generate_token
-import re
-from flask import render_template
-
+from flask_cors import CORS
+import sqlite3
+import bcrypt
+import jwt
+import datetime
+from functools import wraps
+from crypto_utils import encrypt_text, decrypt_text, generate_token, generate_ngrams
 
 app = Flask(__name__)
+CORS(app)
 
-create_tables()
+app.config["SECRET_KEY"] = "super_jwt_secret"
 
+DATABASE = "secure.db"
 
-def extract_keywords(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", "", text)
-    words = text.split()
-
-    stopwords = {"in", "on", "at", "the", "is", "and", "a", "an", "of", "to", "for"}
-    keywords = [w for w in words if w not in stopwords]
-
-    return list(set(keywords))
-
-
-def generate_ngrams(word, n=3):
-    word = word.lower()
-    if len(word) < n:
-        return [word]
-
-    return [word[i:i+n] for i in range(len(word) - n + 1)]
+from flask import render_template
 
 @app.route("/")
-def homes():
-    return render_template("index.html")
+def auth_page():
+    return render_template("auth.html")
 
-@app.route("/")
-def home():
-    return jsonify({
-        "message": "🏆 Secure Searchable Encryption API Running (AES-GCM + HMAC + N-Grams)"
-    })
+@app.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
+# ----------------- DATABASE SETUP -----------------
 
-@app.route("/addRecord", methods=["POST"])
-def add_record():
-    data = request.json
-    plain_text = data.get("text")
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    if not plain_text:
-        return jsonify({"error": "Text is required"}), 400
 
-    encrypted_data = encrypt_text(plain_text)
-
-    conn = get_connection()
+def init_db():
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO records(encrypted_text, nonce, tag)
-        VALUES (?, ?, ?)
-    """, (encrypted_data["ciphertext"], encrypted_data["nonce"], encrypted_data["tag"]))
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password BLOB
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ciphertext TEXT,
+        nonce TEXT,
+        tag TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS search_index (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER,
+        token TEXT
+    )
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_token ON search_index(token)")
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+# ----------------- AUTH LAYER -----------------
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header:
+            return jsonify({"message": "Token missing"}), 403
+
+        try:
+            token = auth_header.split(" ")[1]  # Remove 'Bearer'
+            jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+        except Exception as e:
+            return jsonify({"message": "Invalid or expired token"}), 403
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    username = data["username"]
+    password = data["password"]
+
+    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                   (username, hashed_pw))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "User registered successfully"})
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    username = data["username"]
+    password = data["password"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username=?", (username,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user and bcrypt.checkpw(password.encode(), user["password"]):
+        token = jwt.encode({
+            "user": username,
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        }, app.config["SECRET_KEY"], algorithm="HS256")
+
+        return jsonify({"token": token})
+
+    return jsonify({"message": "Invalid credentials"}), 401
+
+
+# ----------------- ENCRYPTION LAYER -----------------
+
+
+@app.route("/AddRecord", methods=["POST"])
+@token_required
+def add_record():
+    data = request.json
+    text = data["text"]
+
+    encrypted = encrypt_text(text)
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("INSERT INTO records (ciphertext, nonce, tag) VALUES (?, ?, ?)",
+                   (encrypted["ciphertext"], encrypted["nonce"], encrypted["tag"]))
 
     record_id = cursor.lastrowid
 
-    keywords = extract_keywords(plain_text)
+    ngrams = generate_ngrams(text)
 
-    all_tokens = set()
-
-    for word in keywords:
-        ngrams = generate_ngrams(word, n=3)  
-        for ng in ngrams:
-            token = generate_token(ng)
-            all_tokens.add(token)
-
-    for token in all_tokens:
-        cursor.execute("""
-            INSERT INTO search_index(record_id, token)
-            VALUES (?, ?)
-        """, (record_id, token))
+    for gram in ngrams:
+        token = generate_token(gram)
+        cursor.execute("INSERT INTO search_index (record_id, token) VALUES (?, ?)",
+                       (record_id, token))
 
     conn.commit()
     conn.close()
 
-    return jsonify({
-        "message": "✅ Record stored securely (AES-GCM encrypted + HMAC searchable tokens)",
-        "record_id": record_id,
-        "keywords": keywords,
-        "token_count": len(all_tokens)
-    })
+    return jsonify({"message": "Record stored securely"})
 
 
 @app.route("/search", methods=["POST"])
-def search_record():
+@token_required
+def search():
     data = request.json
-    query = data.get("query")
+    text = data["text"]
 
-    if not query:
-        return jsonify({"error": "Query is required"}), 400
-
-    query = query.lower().strip()
-
-    query_ngrams = generate_ngrams(query, n=3)
-
-    query_tokens = [generate_token(ng) for ng in query_ngrams]
-
-    conn = get_connection()
+    ngrams = generate_ngrams(text)
+    conn = get_db()
     cursor = conn.cursor()
 
-    record_ids = set()
+    matched_ids = set()
 
-    for token in query_tokens:
-        cursor.execute("SELECT record_id FROM search_index WHERE token = ?", (token,))
+    for gram in ngrams:
+        token = generate_token(gram)
+        cursor.execute("SELECT record_id FROM search_index WHERE token=?", (token,))
         rows = cursor.fetchall()
         for row in rows:
-            record_ids.add(row["record_id"])
-
-    if not record_ids:
-        conn.close()
-        return jsonify({
-            "message": "❌ No matches found",
-            "results": []
-        })
+            matched_ids.add(row["record_id"])
 
     results = []
-    for rid in record_ids:
-        cursor.execute("SELECT * FROM records WHERE id = ?", (rid,))
-        rec = cursor.fetchone()
 
-        decrypted = decrypt_text(rec["encrypted_text"], rec["nonce"], rec["tag"])
+    for record_id in matched_ids:
+        cursor.execute("SELECT * FROM records WHERE id=?", (record_id,))
+        record = cursor.fetchone()
+
+        decrypted = decrypt_text(record["ciphertext"], record["nonce"], record["tag"])
 
         results.append({
-            "record_id": rid,
+            "record_id": record_id,
             "decrypted_text": decrypted
         })
 
     conn.close()
 
-    return jsonify({
-        "message": "✅ Matches found",
-        "query": query,
-        "ngrams_used": query_ngrams,
-        "matched_count": len(results),
-        "results": results
-    })
-
-
-@app.route("/viewEncrypted", methods=["GET"])
-def view_encrypted():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM records")
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    return jsonify({
-        "encrypted_records": [dict(row) for row in rows]
-    })
+    return jsonify({"results": results})
 
 
 if __name__ == "__main__":

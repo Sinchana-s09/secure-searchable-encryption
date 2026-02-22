@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="dashboard">
+    <h1>🔐 Secure Search Dashboard</h1>
+
+    <button class="logout" onclick="logout()">Logout</button>
+
+    <div class="card">
+        <h3>Add Record</h3>
+        <textarea id="recordText"></textarea>
+        <button onclick="addRecord()">Encrypt & Store</button>
+    </div>
+
+    <div class="card">
+        <h3>Search</h3>
+        <input type="text" id="searchQuery">
+        <button onclick="searchRecord()">Search</button>
+    </div>
+
+    <div class="card">
+        <h3>Results</h3>
+        <pre id="resultBox"></pre>
+    </div>
+</div>
+
+<script>
+function getToken() {
+    return localStorage.getItem("token");
+}
+
+function logout() {
+    localStorage.removeItem("token");
+    window.location.href = "/";
+}
+
+async function addRecord() {
+    const text = document.getElementById("recordText").value;
+
+    const response = await fetch("/addRecord", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + getToken()
+        },
+        body: JSON.stringify({text})
+    });
+
+    const data = await response.json();
+    document.getElementById("resultBox").textContent =
+        JSON.stringify(data, null, 2);
+}
+
+async function searchRecord() {
+    const query = document.getElementById("searchQuery").value;
+
+    const response = await fetch("/search", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + getToken()
+        },
+        body: JSON.stringify({query})
+    });
+
+    const data = await response.json();
+    document.getElementById("resultBox").textContent =
+        JSON.stringify(data, null, 2);
+}
+</script>
+
+</body>
+</html>

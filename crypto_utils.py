@@ -1,16 +1,21 @@
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
+import os
 import base64
 import hmac
 import hashlib
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
-AES_KEY = b"12345678901234567890123456789012"   
+# Securely derive AES key from environment variable
+MASTER_KEY = os.getenv("MASTER_KEY", "default_master_key")
+AES_KEY = hashlib.sha256(MASTER_KEY.encode()).digest()
 
-HMAC_KEY = b"supperr_key"
+# HMAC key
+HMAC_MASTER = os.getenv("HMAC_MASTER", "default_hmac_key")
+HMAC_KEY = hashlib.sha256(HMAC_MASTER.encode()).digest()
+
 
 def encrypt_text(plain_text):
     cipher = AES.new(AES_KEY, AES.MODE_GCM)
-
     ciphertext, tag = cipher.encrypt_and_digest(plain_text.encode())
 
     return {
@@ -23,12 +28,18 @@ def encrypt_text(plain_text):
 def decrypt_text(ciphertext, nonce, tag):
     cipher = AES.new(AES_KEY, AES.MODE_GCM, nonce=base64.b64decode(nonce))
 
-    plain_text = cipher.decrypt_and_verify(
+    plaintext = cipher.decrypt_and_verify(
         base64.b64decode(ciphertext),
         base64.b64decode(tag)
     )
 
-    return plain_text.decode()
+    return plaintext.decode()
+
 
 def generate_token(word):
     return hmac.new(HMAC_KEY, word.encode(), hashlib.sha256).hexdigest()
+
+
+def generate_ngrams(text, n=3):
+    text = text.lower()
+    return [text[i:i+n] for i in range(len(text)-n+1)]
